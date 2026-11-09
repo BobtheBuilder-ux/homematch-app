@@ -1,233 +1,108 @@
-import { StatusBar } from "expo-status-bar";
-import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useMemo, useRef, useState } from "react";
-import { RefreshControl, ScrollView, TextInput, View } from "react-native";
-import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { searchRentals, yearlyRent, type RentalFilters, type RentalProperty } from "@/lib/homematch-api";
 
-import { LoadError } from "@/components/load-error";
-import { ResultCard, ResultCardSkeleton } from "@/components/search/result-card";
-import { SearchBar } from "@/components/search/search-bar";
-import { SearchChips } from "@/components/search/search-chips";
-import { SortMenu } from "@/components/search/sort-menu";
-import { Alert, Badge, Chip, EmptyState, IconButton, Text } from "@/components/ui";
-import { useSearchStays } from "@/hooks/use-search-stays";
-import { posthog } from "@/lib/posthog";
-import type { SearchIntent } from "@/lib/search/intent";
-import {
-  askedFor,
-  chipsFor,
-  describeIntent,
-  hasChip,
-  stayTags,
-  toggleChip,
-  type SortOption,
-  type StayTag,
-} from "@/lib/search/query";
-import type { SearchStay } from "@/lib/stays";
-import { motion } from "@/theme";
-
-const MAX_STAGGERED = 6;
-
-// Offered when nothing matched. Each returns stays in Roam's catalog.
-const SUGGESTIONS = ["cabin with a hot tub", "beach house under $400", "city apartment with a workspace"];
+const types = ["Any", "SelfContain", "Apartment", "Bungalow", "Duplex"] as const;
+const blank = { properties: [] as RentalProperty[], pagination: { page: 1, limit: 20, total: 0, pages: 0 } };
 
 export default function Search() {
   const router = useRouter();
-  const { q = "" } = useLocalSearchParams<{ q?: string }>();
-  const [text, setText] = useState(q);
-  const [shownQ, setShownQ] = useState(q);
-  // How the server read the submitted sentence. Chip toggles refine it until
-  // the next sentence; sort and toggles send it back, so Jev reads it once.
-  const [interpreted, setInterpreted] = useState<SearchIntent | null>(null);
-  const [edited, setEdited] = useState<SearchIntent | null>(null);
-  const [sort, setSort] = useState<SortOption>("best");
-  const input = useRef<TextInput>(null);
+  const { q: initialQuery } = useLocalSearchParams<{ q?: string }>();
+  const [q, setQ] = useState(initialQuery ?? "");
+  const [location, setLocation] = useState("");
+  const [propertyType, setPropertyType] = useState<(typeof types)[number]>("Any");
+  const [beds, setBeds] = useState("");
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [page, setPage] = useState(1);
+  const [filters, setFilters] = useState<RentalFilters>({ q: initialQuery ?? "", page: 1, limit: 20 });
+  const [result, setResult] = useState(blank);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // A new query from Home replaces whatever was typed and toggled here.
-  if (q !== shownQ) {
-    setShownQ(q);
-    setText(q);
-    setInterpreted(null);
-    setEdited(null);
-  }
+  useEffect(() => {
+    if (typeof initialQuery === "string" && initialQuery !== filters.q) {
+      setQ(initialQuery);
+      setFilters((old) => ({ ...old, q: initialQuery, page: 1 }));
+      setPage(1);
+    }
+  }, [initialQuery]);
 
-  // Opened without a query (search button or tab), the bar is ready to type.
-  useFocusEffect(
-    useCallback(() => {
-      if (!q) input.current?.focus();
-    }, [q]),
-  );
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError("");
+    searchRentals(filters, controller.signal).then(setResult).catch((e) => {
+      if (e.name !== "AbortError") setError(e.message || "Search failed");
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
+    });
+    return () => controller.abort();
+  }, [filters]);
 
-  const base = edited ?? interpreted;
-  const { result, pending, error, retry, refresh, refreshing, refreshError, clearRefreshError } = useSearchStays(
-    base ? { intent: base } : { q },
-    sort,
-  );
-  if (!interpreted && result?.key === JSON.stringify([{ q }, sort])) setInterpreted(result.intent);
-  // Until the new sentence is read, the results on screen keep their own reading.
-  const query = base ?? result?.intent;
-  const chips = useMemo(() => (interpreted ? chipsFor(interpreted) : []), [interpreted]);
-  const described = query ? describeIntent(query) : [];
-
-  const clear = () => {
-    setEdited(null);
-    setText("");
-    router.setParams({ q: "" });
-  };
-
-  const search = (next: string) => {
-    setEdited(null);
-    setText(next);
-    router.setParams({ q: next });
+  const submit = () => {
+    const next = {
+      q: q.trim(),
+      location: location.trim(),
+      propertyType: propertyType === "Any" ? undefined : propertyType,
+      bedsMin: beds ? Number(beds) : undefined,
+      priceMin: minPrice ? Number(minPrice) : undefined,
+      priceMax: maxPrice ? Number(maxPrice) : undefined,
+      page: 1,
+      limit: 20
+    } satisfies RentalFilters;
+    setPage(1);
+    setFilters(next);
   };
 
   return (
-    <ScrollView
-      className="flex-1 bg-surface"
-      contentContainerClassName="px-4 pt-2 pb-8"
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => {
-            posthog?.capture("stays_refreshed", { screen: "search" });
-            refresh();
-          }}
-        />
-      }
-    >
-      <StatusBar style="dark" />
-      <View className="flex-row items-center gap-3">
-        <IconButton icon="chevronLeft" size="bar" accessibilityLabel="Back to Home" onPress={() => router.navigate("/home")} />
-        <SearchBar
-          ref={input}
-          value={text}
-          onChangeText={setText}
-          onSubmit={(next) => {
-            posthog?.capture("search_submitted", { source: "search" });
-            search(next);
-          }}
-          className="flex-1"
-        />
+    <ScrollView style={{ flex: 1, backgroundColor: "#fff" }} contentContainerStyle={{ padding: 20, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+      <Text style={{ fontSize: 28, fontWeight: "800", marginBottom: 6, color: "#172B4D" }}>Find your next home</Text>
+      <Text style={{ color: "#64748b", marginBottom: 18 }}>Verified long-term rentals across Nigeria</Text>
+      <TextInput accessibilityLabel="Property or keyword" placeholder="Property or keyword" value={q} onChangeText={setQ} onSubmitEditing={submit} style={field} returnKeyType="search" />
+      <TextInput accessibilityLabel="City or neighbourhood" placeholder="City or neighbourhood" value={location} onChangeText={setLocation} style={field} />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        {types.map((type) => (
+          <Pressable key={type} accessibilityRole="button" onPress={() => setPropertyType(type)} style={{ borderRadius: 16, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: type === propertyType ? "#1769aa" : "#f1f5f9" }}>
+            <Text style={{ color: type === propertyType ? "white" : "#334155" }}>{type === "SelfContain" ? "Self-contain" : type}</Text>
+          </Pressable>
+        ))}
       </View>
-
-      {query && chips.length > 0 && (
-        <View className="mt-3">
-          <SearchChips
-            chips={chips}
-            isSelected={(chip) => hasChip(query, chip)}
-            onToggle={(chip, on) => {
-              posthog?.capture("search_chip_toggled", { chip: chip.kind, on });
-              setEdited(toggleChip(query, chip, on));
-            }}
-          />
-        </View>
-      )}
-
-      {refreshError && result && (
-        <Alert
-          tone="danger"
-          message="Couldn’t refresh. Showing what you had."
-          onDismiss={clearRefreshError}
-          className="mt-5"
-        />
-      )}
-
-      {result && query ? (
-        result.total > 0 ? (
-          <>
-            <View className="mt-5 flex-row items-center justify-between">
-              {/* Earlier results stay on screen while a chip, sort or new sentence loads. */}
-              <Text variant="lead" tone={pending ? "muted" : "ink"} accessibilityLiveRegion="polite">
-                {pending ? "Updating…" : result.total === 1 ? "1 stay" : `${result.total} stays`}
-              </Text>
-              <SortMenu
-                value={sort}
-                onChange={(next) => {
-                  posthog?.capture("search_sorted", { sort: next });
-                  setSort(next);
-                }}
-              />
-            </View>
-            {/* Keyed by request, so every new search, toggle or sort replays the entrance. */}
-            <View key={result.key} className="mt-4 gap-4">
-              {result.stays.map((stay, index) => (
-                <StaggeredResult key={stay.id} stay={stay} tags={stayTags(stay, askedFor(query))} index={index} />
-              ))}
-            </View>
-          </>
-        ) : (
-          <EmptyState
-            icon="searchOff"
-            title="No stays match that yet"
-            message={
-              described.length > 0
-                ? "Every stay has to meet these:"
-                : "Try describing your stay another way."
-            }
-            action={{ title: "Clear search", onPress: clear }}
-            className="mt-10"
-          >
-            {described.length > 0 && (
-              <View className="flex-row flex-wrap justify-center gap-2">
-                {described.map((label) => (
-                  <Badge key={label} label={label} tone="info" />
-                ))}
-              </View>
-            )}
-            <Text variant="label" tone="muted" className="mt-3 text-center">
-              Try one of these:
-            </Text>
-            <View className="flex-row flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((suggestion, index) => (
-                <Chip
-                  key={suggestion}
-                  label={suggestion}
-                  size="xs"
-                  onPress={() => {
-                    posthog?.capture("search_suggestion_tapped", { index });
-                    search(suggestion);
-                  }}
-                />
-              ))}
-            </View>
-          </EmptyState>
-        )
-      ) : error ? (
-        <LoadError error={error} subject="stays" onRetry={retry} className="mt-10" />
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <TextInput accessibilityLabel="Minimum annual rent" placeholder="Min rent ₦/year" keyboardType="numeric" value={minPrice} onChangeText={setMinPrice} style={[field, { flex: 1 }]} />
+        <TextInput accessibilityLabel="Maximum annual rent" placeholder="Max rent ₦/year" keyboardType="numeric" value={maxPrice} onChangeText={setMaxPrice} style={[field, { flex: 1 }]} />
+      </View>
+      <TextInput accessibilityLabel="Minimum number of bedrooms" placeholder="Minimum bedrooms" keyboardType="numeric" value={beds} onChangeText={setBeds} style={field} />
+      <Pressable accessibilityRole="button" onPress={submit} style={{ backgroundColor: "#1769aa", padding: 15, borderRadius: 12, alignItems: "center", marginBottom: 20 }}>
+        <Text style={{ color: "#fff", fontWeight: "700" }}>Search properties</Text>
+      </Pressable>
+      {loading ? <ActivityIndicator size="large" color="#1769aa" /> : error ? (
+        <View><Text accessibilityRole="alert" style={{ color: "#b91c1c" }}>{error}</Text><Pressable onPress={() => setFilters({ ...filters })}><Text style={{ color: "#1769aa", marginTop: 12 }}>Retry</Text></Pressable></View>
       ) : (
-        <View accessibilityLabel="Finding stays" accessible>
-          <Text variant="lead" tone="muted" className="mt-5">
-            Finding stays…
-          </Text>
-          <View className="mt-4 gap-4">
-            {[0, 1, 2].map((i) => (
-              <ResultCardSkeleton key={i} />
-            ))}
+        <>
+          <Text style={{ fontWeight: "700", marginBottom: 14 }}>{result.pagination.total} properties found</Text>
+          {result.properties.map((property) => (
+            <Pressable accessibilityRole="button" key={property.id} onPress={() => router.push({ pathname: "/property/[id]", params: { id: String(property.id) } })} style={{ marginBottom: 16, borderRadius: 12, borderWidth: 1, borderColor: "#e2e8f0", overflow: "hidden" }}>
+              {property.photoUrls?.[0] ? <Image source={{ uri: property.photoUrls[0] }} style={{ width: "100%", height: 180 }} resizeMode="cover" /> : <View style={{ height: 120, backgroundColor: "#e2e8f0", justifyContent: "center", alignItems: "center" }}><Text>No photo</Text></View>}
+              <View style={{ padding: 14, gap: 5 }}>
+                <Text style={{ fontSize: 17, fontWeight: "700" }}>{property.name}</Text>
+                <Text style={{ color: "#64748b" }}>{[property.location?.city, property.location?.state].filter(Boolean).join(", ")}</Text>
+                <Text>{property.beds} beds · {property.baths} baths · {property.propertyType}</Text>
+                <Text style={{ color: "#1769aa", fontWeight: "800" }}>{yearlyRent(property.pricePerYear)}</Text>
+              </View>
+            </Pressable>
+          ))}
+          {result.pagination.total === 0 && <Text style={{ color: "#64748b" }}>No available properties match these filters. Try another location or price range.</Text>}
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 12 }}>
+            <Pressable disabled={page <= 1} onPress={() => { const n = page - 1; setPage(n); setFilters({ ...filters, page: n }); }}><Text style={{ color: page <= 1 ? "#94a3b8" : "#1769aa" }}>Previous</Text></Pressable>
+            <Text>Page {page} of {Math.max(1, result.pagination.pages)}</Text>
+            <Pressable disabled={page >= result.pagination.pages} onPress={() => { const n = page + 1; setPage(n); setFilters({ ...filters, page: n }); }}><Text style={{ color: page >= result.pagination.pages ? "#94a3b8" : "#1769aa" }}>Next</Text></Pressable>
           </View>
-        </View>
+        </>
       )}
     </ScrollView>
   );
 }
 
-// Results the guest asked for and is waiting on rise in, 40 ms apart. Rows past
-// the sixth come in together so a long list never feels slow.
-function StaggeredResult({ stay, tags, index }: { stay: SearchStay; tags: StayTag[]; index: number }) {
-  const router = useRouter();
-  const entering = useMemo(
-    () =>
-      FadeInDown.duration(motion.base)
-        .delay(Math.min(index, MAX_STAGGERED) * motion.stagger)
-        .easing(motion.easeOut)
-        .reduceMotion(ReduceMotion.System),
-    [index],
-  );
-  return (
-    <Animated.View entering={entering}>
-      <ResultCard stay={stay} tags={tags} onPress={() => router.push(`/stay/${stay.slug}`)} />
-    </Animated.View>
-  );
-}
+const field = { borderColor: "#cbd5e1", borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, marginBottom: 12, color: "#0f172a" } as const;

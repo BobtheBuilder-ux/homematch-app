@@ -23,7 +23,7 @@ export default function AppLayout() {
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="trips">
           <NativeTabs.Trigger.Icon sf="calendar" md="calendar_today" />
-          <NativeTabs.Trigger.Label>Trips</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Label>Applications</NativeTabs.Trigger.Label>
         </NativeTabs.Trigger>
         <NativeTabs.Trigger name="profile">
           <NativeTabs.Trigger.Icon sf={{ default: "person", selected: "person.fill" }} md="person" />

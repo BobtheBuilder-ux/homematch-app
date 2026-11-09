@@ -115,6 +115,7 @@ function RootNavigator({ fontsReady }: { fontsReady: boolean }) {
       <Stack.Protected guard={!!isSignedIn}>
         <Stack.Screen name="(app)" />
         {/* Pushed over the tabs, so the tab bar hides on a stay. */}
+        <Stack.Screen name="property/[id]" />
         <Stack.Screen name="stay/[slug]/index" />
         <Stack.Screen name="stay/[slug]/ask" />
         <Stack.Screen name="stay/[slug]/book" />
