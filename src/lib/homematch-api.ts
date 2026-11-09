@@ -16,7 +16,7 @@ export type PropertyPage = {
   properties: RentalProperty[];
   pagination: { page: number; limit: number; total: number; pages: number };
 };
-const baseURL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\\/$/, "");
+const baseURL = (process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "");
 export async function getRentalProperties(filters: PropertySearch, signal?: AbortSignal): Promise<PropertyPage> {
   if (!baseURL) throw new Error("Configure EXPO_PUBLIC_API_BASE_URL to search HomeMatch homes.");
   const query = new URLSearchParams();
