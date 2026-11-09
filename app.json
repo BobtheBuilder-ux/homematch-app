@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "airbnb-record",
-    "slug": "airbnb-record",
+    "name": "HomeMatch",
+    "slug": "homematch",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "airbnbrecord",
+    "scheme": "homematch",
     "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon"
