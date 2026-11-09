@@ -10,9 +10,9 @@ export default function Trips() {
     <View className="flex-1 justify-center bg-surface">
       <EmptyState
         icon="calendar"
-        title="No trips yet"
-        message="Stays you book will show up here."
-        action={{ title: "Explore stays", onPress: () => router.navigate("/home") }}
+        title="No rental applications yet"
+        message="Your HomeMatch rental applications will appear here after the tenant account migration."
+        action={{ title: "Explore homes", onPress: () => router.navigate("/home") }}
       />
     </View>
   );
