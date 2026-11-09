@@ -14,7 +14,7 @@ This branch is an **initial tenant catalogue conversion**, not a production-read
 Copy into the local Expo environment (never commit secrets):
 
 ```env
-EXPO_PUBLIC_API_BASE_URL=https://YOUR-HOMEMATCH-API/properties-base
+EXPO_PUBLIC_API_BASE_URL=https://YOUR-HOMEMATCH-API
 ```
 
 **Important:** Set the value to the API origin/root that exposes `/properties` directly; do not include `/properties` in the variable. Example: `https://api.example.com` if `GET https://api.example.com/properties` is valid.
