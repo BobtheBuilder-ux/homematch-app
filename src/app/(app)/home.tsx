@@ -1,140 +1,67 @@
-import { useUser } from "@clerk/expo";
-import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
-import { useState } from "react";
-import { RefreshControl, ScrollView, View } from "react-native";
-import Animated, { FadeIn, FadeOut, LayoutAnimationConfig, LinearTransition, ReduceMotion } from "react-native-reanimated";
-
-import { Wordmark } from "@/components/brand/wordmark";
-import { categories, CategoryChips, type Category } from "@/components/home/category-chips";
-import { LoadError } from "@/components/load-error";
-import { PropertyCard } from "@/components/stays/property-card";
-import { SearchPrompt } from "@/components/stays/search-prompt";
-import { Alert, Avatar, EmptyState, Icon, PressableScale, Skeleton, Text } from "@/components/ui";
-import { useHomeStays } from "@/hooks/use-home-stays";
-import { logPostHogInfo, posthog } from "@/lib/posthog";
-import { motion } from "@/theme";
-
-// Changing the category fades cards in and out and eases the rest into place.
-// Fades survive Reduce Motion, the movement doesn't.
-const cardEnter = FadeIn.duration(200).easing(motion.easeOut).reduceMotion(ReduceMotion.Never);
-const cardExit = FadeOut.duration(150).easing(motion.easeOut).reduceMotion(ReduceMotion.Never);
-const cardLayout = LinearTransition.duration(motion.base).easing(motion.easeInOut).reduceMotion(ReduceMotion.System);
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+import { searchRentals, yearlyRent, type RentalProperty } from "@/lib/homematch-api";
 
 export default function Home() {
   const router = useRouter();
-  const { user } = useUser();
-  const [category, setCategory] = useState<Category>("all");
-  const [prompt, setPrompt] = useState("");
+  const [query, setQuery] = useState("");
+  const [properties, setProperties] = useState<RentalProperty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [refresh, setRefresh] = useState(0);
 
-  const { stays, error, retry, refresh, refreshing, refreshError, clearRefreshError } = useHomeStays(category);
-  const categoryIcon = categories.find((c) => c.value === category)?.icon ?? "homeFill";
+  useEffect(() => {
+    const controller = new AbortController();
+    setError("");
+    searchRentals({ page: 1, limit: 12, sortBy: "postedDate", sortOrder: "desc" }, controller.signal)
+      .then((response) => setProperties(response.properties))
+      .catch((e) => { if (e.name !== "AbortError") setError(e.message || "Unable to load properties"); })
+      .finally(() => { if (!controller.signal.aborted) { setLoading(false); setRefreshing(false); } });
+    return () => controller.abort();
+  }, [refresh]);
 
   return (
-    <ScrollView
-      className="flex-1 bg-surface"
-      contentContainerClassName="px-5 pt-2 pb-8"
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={() => {
-            posthog?.capture("stays_refreshed", { screen: "home" });
-            refresh();
-          }}
-        />
-      }
-    >
-      <StatusBar style="dark" />
-
-      <View className="flex-row items-start justify-between">
-        <View className="pt-4">
-          <Wordmark />
-        </View>
-        <Avatar imageUrl={user?.hasImage ? user.imageUrl : null} name={user?.firstName} />
+    <ScrollView style={{ backgroundColor: "#fff", flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 48 }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); setRefresh((v) => v + 1); }} />}>
+      <Text style={{ fontSize: 28, color: "#1769aa", fontWeight: "900", marginTop: 12 }}>HomeMatch</Text>
+      <Text style={{ fontSize: 30, color: "#172B4D", fontWeight: "800", marginTop: 24 }}>Find a place to call home.</Text>
+      <Text style={{ color: "#64748b", fontSize: 15, marginTop: 6, marginBottom: 18 }}>Explore long-term rentals in Nigeria, all in one place.</Text>
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 22 }}>
+        <TextInput accessibilityLabel="Search a city or property" placeholder="City, area or property" value={query} onChangeText={setQuery}
+          onSubmitEditing={() => router.push({ pathname: "/search", params: { q: query.trim() } })}
+          style={{ borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 10, padding: 12, flex: 1 }} />
+        <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: "/search", params: { q: query.trim() } })}
+          style={{ backgroundColor: "#1769aa", borderRadius: 10, padding: 13, justifyContent: "center" }}>
+          <Text style={{ color: "#fff", fontWeight: "700" }}>Search</Text>
+        </Pressable>
       </View>
-
-      {/* An icon, not an emoji: Plus Jakarta Sans has no emoji glyphs, so iOS draws "?". */}
-      <View className="mt-3 flex-row items-center gap-1.5">
-        <Text variant="title" tone="muted">
-          {user?.firstName ? `Hey, ${user.firstName}` : "Hey there"}
-        </Text>
-        <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <Icon name="wave" size={22} tone="primary" />
-        </View>
-      </View>
-      <View className="mt-1 flex-row items-center gap-4">
-        <Text variant="jumbo" accessibilityRole="header" className="flex-1">
-          {"Find your\nnext stay"}
-        </Text>
-        <PressableScale
-          accessibilityRole="button"
-          accessibilityLabel="Search"
-          onPress={() => router.navigate("/search")}
-          className="h-22 w-16 items-center justify-center rounded-xl bg-surface-muted"
-        >
-          <Icon name="search" size={26} />
-        </PressableScale>
-      </View>
-
-      <SearchPrompt
-        value={prompt}
-        onChangeText={setPrompt}
-        onSubmit={(q) => {
-          posthog?.capture("search_submitted", { source: "home" });
-          logPostHogInfo("stay search submitted", {
-            event: "stay_search_submitted",
-            source: "home",
-          });
-          router.navigate({ pathname: "/search", params: { q } });
-        }}
-        className="mt-5"
-      />
-
-      <View className="mt-5">
-        <CategoryChips value={category} onChange={setCategory} />
-      </View>
-
-      {refreshError && stays && (
-        <Alert
-          tone="danger"
-          message="Couldn’t refresh. Showing what you had."
-          onDismiss={clearRefreshError}
-          className="mt-7"
-        />
-      )}
-
-      {stays ? (
-        stays.length > 0 ? (
-          // The first list appears without entrances; only category changes animate.
-          <LayoutAnimationConfig skipEntering>
-            <View className="mt-7 gap-5">
-              {stays.map((property) => (
-                <Animated.View key={property.id} entering={cardEnter} exiting={cardExit} layout={cardLayout}>
-                  <PropertyCard property={property} onPress={() => router.push(`/stay/${property.slug}`)} />
-                </Animated.View>
-              ))}
-            </View>
-          </LayoutAnimationConfig>
-        ) : (
-          <EmptyState
-            icon={categoryIcon}
-            title="No stays here yet"
-            message="Try another category, or describe your stay above."
-            action={category === "all" ? undefined : { title: "Show all stays", onPress: () => setCategory("all") }}
-            className="mt-10"
-          />
-        )
-      ) : error ? (
-        <LoadError error={error} subject="stays" onRetry={retry} className="mt-10" />
+      <Text style={{ fontSize: 20, fontWeight: "800", marginBottom: 12 }}>Recently listed homes</Text>
+      {loading ? <ActivityIndicator size="large" color="#1769aa" /> : error ? (
+        <View><Text accessibilityRole="alert" style={{ color: "#b91c1c" }}>{error}</Text>
+          <Pressable onPress={() => { setLoading(true); setRefresh((v) => v + 1); }}><Text style={{ color: "#1769aa", marginTop: 12 }}>Retry</Text></Pressable></View>
       ) : (
-        <View className="mt-7 gap-5" accessibilityLabel="Loading stays" accessible>
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-68 rounded-xl" />
+        <>
+          {properties.map((property) => (
+            <Pressable key={property.id} accessibilityRole="button" onPress={() => router.push({ pathname: "/property/[id]", params: { id: String(property.id) } })}
+              style={{ borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+              {property.photoUrls?.[0] ? <Image source={{ uri: property.photoUrls[0] }} style={{ width: "100%", height: 205 }} resizeMode="cover" /> :
+                <View style={{ height: 140, backgroundColor: "#e2e8f0", alignItems: "center", justifyContent: "center" }}><Text>Property photo unavailable</Text></View>}
+              <View style={{ padding: 14, gap: 5 }}>
+                <Text style={{ fontSize: 17, fontWeight: "700", color: "#172B4D" }}>{property.name}</Text>
+                <Text style={{ color: "#64748b" }}>{[property.location?.city, property.location?.state].filter(Boolean).join(", ")}</Text>
+                <Text>{property.beds} bedrooms · {property.baths} bathrooms</Text>
+                <Text style={{ color: "#1769aa", fontWeight: "800" }}>{yearlyRent(property.pricePerYear)}</Text>
+              </View>
+            </Pressable>
           ))}
-        </View>
+          {properties.length === 0 && <Text>No rental homes are currently available. Search another area soon.</Text>}
+          <Pressable accessibilityRole="button" onPress={() => router.push("/search")}
+            style={{ padding: 14, backgroundColor: "#eff6ff", borderRadius: 10, alignItems: "center" }}>
+            <Text style={{ color: "#1769aa", fontWeight: "700" }}>Explore all available homes</Text>
+          </Pressable>
+        </>
       )}
     </ScrollView>
   );
