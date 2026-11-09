@@ -1,19 +1,14 @@
 import { useRouter } from "expo-router";
 import { View } from "react-native";
-
 import { EmptyState } from "@/components/ui";
 
-// Placeholder until trips are designed and booking exists.
-export default function Trips() {
+// Tenant application history requires the secured HomeMatch identity migration.
+// Do not invent applications from local Roam bookings.
+export default function Applications() {
   const router = useRouter();
-  return (
-    <View className="flex-1 justify-center bg-surface">
-      <EmptyState
-        icon="calendar"
-        title="No trips yet"
-        message="Stays you book will show up here."
-        action={{ title: "Explore stays", onPress: () => router.navigate("/home") }}
-      />
-    </View>
-  );
+  return <View className="flex-1 justify-center bg-surface">
+    <EmptyState icon="calendar" title="Your rental applications"
+      message="Application tracking will appear here when your HomeMatch account is connected."
+      action={{ title: "Explore available homes", onPress: () => router.navigate("/search") }} />
+  </View>;
 }

@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "airbnb-record",
-    "slug": "airbnb-record",
+    "name": "homematch",
+    "slug": "homematch",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "airbnbrecord",
+    "scheme": "homematch",
     "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon"
@@ -28,7 +28,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#1D4ED8",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
